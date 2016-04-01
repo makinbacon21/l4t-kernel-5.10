@@ -8,6 +8,7 @@
  */
 
 #include <linux/cpumask.h>
+#include <linux/export.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
@@ -31,6 +32,13 @@ static u8 flowctrl_offset_cpu_csr[] = {
 	FLOW_CTRL_CPU1_CSR,
 	FLOW_CTRL_CPU1_CSR + 8,
 	FLOW_CTRL_CPU1_CSR + 16,
+};
+
+static u8 flowctrl_offset_cc4_ctrl[] = {
+	FLOW_CTRL_CC4_CORE0_CTRL,
+	FLOW_CTRL_CC4_CORE0_CTRL + 4,
+	FLOW_CTRL_CC4_CORE0_CTRL + 8,
+	FLOW_CTRL_CC4_CORE0_CTRL + 12,
 };
 
 static void __iomem *tegra_flowctrl_base;
@@ -57,6 +65,11 @@ u32 flowctrl_read_cpu_csr(unsigned int cpuid)
 		return 0;
 
 	return readl(tegra_flowctrl_base + offset);
+}
+
+void flowctrl_write_cc4_ctrl(unsigned int cpuid, u32 value)
+{
+	return flowctrl_update(flowctrl_offset_cc4_ctrl[cpuid], value);
 }
 
 void flowctrl_write_cpu_csr(unsigned int cpuid, u32 value)
@@ -166,6 +179,16 @@ static int tegra_flowctrl_probe(struct platform_device *pdev)
 	iounmap(base);
 
 	return 0;
+}
+
+void flowctrl_cop_halt(void)
+{
+	flowctrl_update(FLOW_CTRL_HALT_COP_EVENTS, FLOW_CTRL_WAITEVENT);
+}
+
+void flowctrl_cop_unhalt(void)
+{
+	flowctrl_update(FLOW_CTRL_HALT_COP_EVENTS, 0);
 }
 
 static const struct of_device_id tegra_flowctrl_match[] = {
