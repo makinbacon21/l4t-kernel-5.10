@@ -776,4 +776,11 @@ config RN5T618_POWER
 	  This driver can also be built as a module. If so, the module will be
 	  called rn5t618_power.
 
+config BATTERY_CHARGER_GAUGE_COMM
+	bool "Battery charger and Fuel gauge interface layer"
+	help
+	  This driver is to communicate from charger driver to fuel
+	  gauge driver and vice versa.this interface needed to pass battery
+	  status information.
+
 endif # POWER_SUPPLY
