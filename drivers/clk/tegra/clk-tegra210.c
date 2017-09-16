@@ -2739,6 +2739,7 @@ static struct tegra_clk tegra210_clks[tegra_clk_max] __initdata = {
 	[tegra_clk_vic_floor_cbus] = { .dt_id = TEGRA210_CLK_VIC_FLOOR_CBUS, .present = true },
 	[tegra_clk_wifi_sclk] = { .dt_id = TEGRA210_CLK_WIFI_SCLK, .present = true },
 	[tegra_clk_override_cbus] = { .dt_id = TEGRA210_CLK_OVERRIDE_CBUS, .present = true },
+	[tegra_clk_override_emc] = { .dt_id = TEGRA210_CLK_OVERRIDE_EMC, .present = true },
 };
 
 static struct tegra_devclk devclks[] __initdata = {
@@ -3824,6 +3825,10 @@ static __init void tegra210_shared_clk_init(char *sclk_high_clk)
 				      TEGRA_SHARED_BUS_RETENTION,
 				      12000000, 1300000000);
 	clks[TEGRA210_CLK_GBUS] = clk;
+
+	clk = tegra_clk_register_shared_master("emc_master", "emc", 0,
+						12750000, 1800000000);
+	clks[TEGRA210_CLK_EMC_MASTER] = clk;
 
 	clk = tegra_clk_register_shared_master("host1x_master", "host1x", 0,
 						12000000, 408000000);
