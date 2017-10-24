@@ -60,6 +60,12 @@ static const struct of_device_id tegra_xusb_padctl_of_match[] = {
 		.data = &tegra210_xusb_padctl_soc,
 	},
 #endif
+#if defined(CONFIG_ARCH_TEGRA_210_SOC)
+	{
+		.compatible = "nvidia,tegra210b01-xusb-padctl",
+		.data = &tegra210b01_xusb_padctl_soc,
+	},
+#endif
 #if defined(CONFIG_ARCH_TEGRA_186_SOC)
 	{
 		.compatible = "nvidia,tegra186-xusb-padctl",

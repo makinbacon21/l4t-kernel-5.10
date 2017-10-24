@@ -244,6 +244,7 @@ struct tegra_xusb_pcie_pad {
 
 	struct reset_control *rst;
 	struct clk *pll;
+	struct clk *uphy_mgmt_clk;
 
 	bool enable;
 };
@@ -513,6 +514,9 @@ extern const struct tegra_xusb_padctl_soc tegra124_xusb_padctl_soc;
 #endif
 #if defined(CONFIG_ARCH_TEGRA_210_SOC)
 extern const struct tegra_xusb_padctl_soc tegra210_xusb_padctl_soc;
+#endif
+#if defined(CONFIG_ARCH_TEGRA_210_SOC)
+extern const struct tegra_xusb_padctl_soc tegra210b01_xusb_padctl_soc;
 #endif
 #if defined(CONFIG_ARCH_TEGRA_186_SOC)
 extern const struct tegra_xusb_padctl_soc tegra186_xusb_padctl_soc;
