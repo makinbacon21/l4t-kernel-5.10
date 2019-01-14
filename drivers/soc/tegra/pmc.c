@@ -119,6 +119,8 @@
 #define PMC_FUSE_CTRL_ENABLE_REDIRECTION	(1 << 0)
 #define PMC_FUSE_CTRL_DISABLE_REDIRECTION	(1 << 1)
 
+#define KERNEL_PANIC_FLAG		(1 << 24)
+
 #define PMC_SCRATCH41			0x140
 
 #define PMC_WAKE2_MASK			0x160
@@ -338,6 +340,7 @@
 #define PMC_FUSE_CTRL_PS18_LATCH_SET    (1 << 8)
 #define PMC_FUSE_CTRL_PS18_LATCH_CLEAR  (1 << 9)
 
+#define PMC_SCRATCH37       0x130
 #define PMC_SCRATCH43		0x22c
 #define PMC_SCRATCH203		0x84c
 /* PMIC watchdog reset bit */
@@ -1740,6 +1743,22 @@ static int tegra_pmc_restart_notify(struct notifier_block *this,
 static struct notifier_block tegra_pmc_restart_handler = {
 	.notifier_call = tegra_pmc_restart_notify,
 	.priority = 128,
+};
+
+static int tegra_pmc_panic_handler(struct notifier_block *this,
+				    unsigned long action, void *data)
+{
+	u32 pmc_reg_val;
+
+	pmc_reg_val = tegra_pmc_reg_readl(PMC_SCRATCH37);
+	tegra_pmc_reg_writel((pmc_reg_val | KERNEL_PANIC_FLAG), PMC_SCRATCH37);
+
+	return NOTIFY_DONE;
+}
+
+struct notifier_block tegra_pmc_panic_notifier = {
+	.notifier_call = tegra_pmc_panic_handler,
+	.priority      = INT_MAX-1,
 };
 
 static int powergate_show(struct seq_file *s, void *data)
@@ -4616,7 +4635,15 @@ static int tegra_pmc_probe(struct platform_device *pdev)
 	/* Some wakes require specific filter configuration */
 	if (pmc->soc->set_wake_filters)
 		pmc->soc->set_wake_filters(pmc);
-
+    
+    /* For writing to kernel panic flag for cboot on t21x chips */
+	if (tegra_hidrev_get_chipid(tegra_read_chipid()) == TEGRA210) {
+		err = atomic_notifier_chain_register(&panic_notifier_list,
+			&tegra_pmc_panic_notifier);
+		if (err != 0) {
+			pr_err("ERROR: Failed to register PMC panic notifier: %d", err);
+		}
+	}
 
 	return 0;
 
