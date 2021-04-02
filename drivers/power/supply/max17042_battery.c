@@ -84,6 +84,7 @@ static enum power_supply_property max17042_battery_props[] = {
 	POWER_SUPPLY_PROP_TEMP_MIN,
 	POWER_SUPPLY_PROP_TEMP_MAX,
 	POWER_SUPPLY_PROP_HEALTH,
+    POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_SCOPE,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_NOW,
 	// these two have to be at the end on the list
@@ -1005,7 +1006,7 @@ static const struct regmap_config max17042_regmap_config = {
 };
 
 static const struct power_supply_desc max17042_psy_desc = {
-	.name		= "max170xx_battery",
+	.name		= "battery",
 	.type		= POWER_SUPPLY_TYPE_BATTERY,
 	.get_property	= max17042_get_property,
 	.set_property	= max17042_set_property,
@@ -1016,7 +1017,7 @@ static const struct power_supply_desc max17042_psy_desc = {
 };
 
 static const struct power_supply_desc max17042_no_current_sense_psy_desc = {
-	.name		= "max170xx_battery",
+	.name		= "battery",
 	.type		= POWER_SUPPLY_TYPE_BATTERY,
 	.get_property	= max17042_get_property,
 	.set_property	= max17042_set_property,
