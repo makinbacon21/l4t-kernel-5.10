@@ -1863,6 +1863,7 @@ tegra210_usb2_lane_probe(struct tegra_xusb_pad *pad, struct device_node *np,
 			 unsigned int index)
 {
 	struct tegra_xusb_usb2_lane *usb2;
+	u32 offset;
 	int err;
 
 	usb2 = kzalloc(sizeof(*usb2), GFP_KERNEL);
@@ -1880,6 +1881,17 @@ tegra210_usb2_lane_probe(struct tegra_xusb_pad *pad, struct device_node *np,
 		kfree(usb2);
 		return ERR_PTR(err);
 	}
+
+    /* Get hs current level offset if available */
+	err = of_property_read_u32(np, "nvidia,hs_curr_level_offset", &offset);
+	if (!err)
+		usb2->hs_curr_level_offset = offset;
+
+	dev_info(pad->padctl->dev, "dev = %s, lane = %s, function = %s, "
+		"hs_curr_level_offset = %d\n",
+		dev_name(&pad->lanes[index]->dev), pad->soc->lanes[index].name,
+		usb2->base.soc->funcs[usb2->base.function],
+		usb2->hs_curr_level_offset);
 
 	return &usb2->base;
 }
