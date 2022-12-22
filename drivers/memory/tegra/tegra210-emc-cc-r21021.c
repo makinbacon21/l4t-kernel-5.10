@@ -428,22 +428,23 @@ static u32 periodic_compensation_handler(struct tegra210_emc *emc, u32 type,
 			 * frequencies EMA data.
 			 */
 			__COPY_EMA(next, last, C0D0U0);
-			__COPY_EMA(next, last, C0D0U1);
 			__COPY_EMA(next, last, C1D0U0);
-			__COPY_EMA(next, last, C1D0U1);
 			__COPY_EMA(next, last, C0D1U0);
-			__COPY_EMA(next, last, C0D1U1);
 			__COPY_EMA(next, last, C1D1U0);
+			__COPY_EMA(next, last, C0D0U1);
+			__COPY_EMA(next, last, C1D0U1);
+			__COPY_EMA(next, last, C0D1U1);
 			__COPY_EMA(next, last, C1D1U1);
 		} else {
 			/* Reset the EMA.*/
 			__MOVAVG(next, C0D0U0) = 0;
-			__MOVAVG(next, C0D0U1) = 0;
 			__MOVAVG(next, C1D0U0) = 0;
-			__MOVAVG(next, C1D0U1) = 0;
 			__MOVAVG(next, C0D1U0) = 0;
-			__MOVAVG(next, C0D1U1) = 0;
 			__MOVAVG(next, C1D1U0) = 0;
+			ndelay(1);
+			__MOVAVG(next, C0D0U1) = 0;
+			__MOVAVG(next, C1D0U1) = 0;
+			__MOVAVG(next, C0D1U1) = 0;
 			__MOVAVG(next, C1D1U1) = 0;
 
 			for (i = 0; i < samples; i++) {
