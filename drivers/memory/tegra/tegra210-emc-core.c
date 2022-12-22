@@ -3,6 +3,7 @@
  * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
  */
 
+#include <linux/arm-smccc.h>
 #include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/clk/tegra.h>
@@ -1824,12 +1825,39 @@ static int tegra210_emc_validate_timings(struct tegra210_emc *emc,
 	return 0;
 }
 
+#define TEGRA_SIP_EMC_COMMAND_FID	0xC2FFFE01
+#define EMC_TABLE_ADDR				0xaa
+#define EMC_TABLE_SIZE				0xbb
+
+static void tegra210_init_emc_data_smc(struct platform_device *pdev,
+                        struct resource *table)
+{
+	struct arm_smccc_res res;
+	u64 size, base;
+
+	arm_smccc_smc(TEGRA_SIP_EMC_COMMAND_FID, EMC_TABLE_ADDR, 0, 0,
+		0, 0, 0, 0, &res);
+	base = res.a1;
+
+	arm_smccc_smc(TEGRA_SIP_EMC_COMMAND_FID, EMC_TABLE_SIZE, 0, 0,
+			0, 0, 0, 0, &res);
+	size = res.a1;
+	if (!size)
+		base = 0;
+
+	table->start = base;
+	table->end = base + size - 1;
+	table->name = "EMC DVFS Table";
+	table->flags = IORESOURCE_MEM;
+}
+
 static int tegra210_emc_probe(struct platform_device *pdev)
 {
 	struct thermal_cooling_device *cd;
 	unsigned long current_rate;
 	struct platform_device *mc;
 	struct tegra210_emc *emc;
+	struct resource table_res;
 	struct device_node *np;
 	unsigned int i;
 	int err;
@@ -1879,34 +1907,51 @@ static int tegra210_emc_probe(struct platform_device *pdev)
 
 	tegra210_emc_detect(emc);
 	np = pdev->dev.of_node;
+	if (of_find_property(np, "nvidia,use-smc-emc-tables", NULL)) {
+		tegra210_init_emc_data_smc(pdev, &table_res);
+		if (!table_res.start) {
+			dev_err(emc->dev, "SMC EMC table not supported\n");
+			return -ENODATA;
+		}
 
-	/* attach to the nominal and (optional) derated tables */
-	err = of_reserved_mem_device_init_by_name(emc->dev, np, "nominal");
-	if (err < 0) {
-		dev_err(emc->dev, "failed to get nominal EMC table: %d\n", err);
-		goto put_mc;
-	}
+		emc->nominal = devm_ioremap_resource(emc->dev, &table_res);
+		if (IS_ERR(emc->nominal)) {
+			dev_err(emc->dev, "%ld\n", PTR_ERR(emc->nominal));
+			return PTR_ERR(emc->nominal);
+		}
 
-	err = of_reserved_mem_device_init_by_name(emc->dev, np, "derated");
-	if (err < 0 && err != -ENODEV) {
-		dev_err(emc->dev, "failed to get derated EMC table: %d\n", err);
-		goto release;
-	}
+		emc->num_timings = (table_res.end - table_res.start + 1) /
+					sizeof(struct tegra210_emc_timing);
+    } else {
+		/* attach to the nominal and (optional) derated tables */
+		err = of_reserved_mem_device_init_by_name(emc->dev, np, "nominal");
+		if (err < 0) {
+			dev_err(emc->dev, "failed to get nominal EMC table: %d\n", err);
+			return err;
+		}
 
-	/* validate the tables */
-	if (emc->nominal) {
-		err = tegra210_emc_validate_timings(emc, emc->nominal,
-						    emc->num_timings);
-		if (err < 0)
+		err = of_reserved_mem_device_init_by_name(emc->dev, np, "derated");
+		if (err < 0 && err != -ENODEV) {
+			dev_err(emc->dev, "failed to get derated EMC table: %d\n", err);
 			goto release;
-	}
+		}
 
-	if (emc->derated) {
-		err = tegra210_emc_validate_timings(emc, emc->derated,
-						    emc->num_timings);
-		if (err < 0)
-			goto release;
-	}
+		/* validate the tables */
+		if (emc->nominal) {
+			err = tegra210_emc_validate_timings(emc, emc->nominal,
+								emc->num_timings);
+			if (err < 0)
+				goto release;
+		}
+
+		if (emc->derated) {
+			err = tegra210_emc_validate_timings(emc, emc->derated,
+								emc->num_timings);
+			if (err < 0)
+				goto release;
+		}
+    }
+
 
 	/* default to the nominal table */
 	emc->timings = emc->nominal;
