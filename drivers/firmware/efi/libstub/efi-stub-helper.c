@@ -21,7 +21,7 @@
 bool efi_nochunk;
 bool efi_nokaslr = !IS_ENABLED(CONFIG_RANDOMIZE_BASE);
 bool efi_noinitrd;
-int efi_loglevel = CONSOLE_LOGLEVEL_DEFAULT;
+int efi_loglevel = CONSOLE_LOGLEVEL_QUIET;
 bool efi_novamap;
 
 static bool efi_nosoftreserve;
