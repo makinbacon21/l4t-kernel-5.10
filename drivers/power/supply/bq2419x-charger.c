@@ -45,22 +45,8 @@
 #include <linux/alarmtimer.h>
 #include <linux/power/battery-charger-gauge-comm.h>
 #include <linux/workqueue.h>
-#include <linux/extcon.h>
 
-#define MAX_STR_PRINT 50
-
-#define bq_chg_err(bq, fmt, ...)			\
-		dev_err(bq->dev, "Charging Fault: " fmt, ##__VA_ARGS__)
-
-#define BQ2419X_INPUT_VINDPM_OFFSET	3880
-#define BQ2419X_CHARGE_ICHG_OFFSET	512
-#define BQ2419X_PRE_CHG_IPRECHG_OFFSET	128
-#define BQ2419X_PRE_CHG_TERM_OFFSET	128
-#define BQ2419X_CHARGE_VOLTAGE_OFFSET	3504
-#define BQ2419x_OTG_ENABLE_TIME		msecs_to_jiffies(30000)
-#define BQ2419X_PC_USB_LP0_THRESHOLD	95
-#define BQ2419x_TEMP_H_CHG_DISABLE	50
-#define BQ2419x_TEMP_L_CHG_DISABLE	0
+#include "bq2419x-charger.h"
 
 /* input current limit */
 static const unsigned int iinlim[] = {
@@ -951,10 +937,10 @@ static int bq2419x_extcon_cable_update(struct bq2419x_chip *bq2419x,
 							unsigned int val)
 {
 	if ((val & BQ2419x_VBUS_PG_STAT) == BQ2419x_PG_VBUS_USB) {
-		extcon_set_state_sync(&bq2419x->edev, EXTCON_USB,  true);
+		extcon_set_state(&bq2419x->edev, EXTCON_USB,  true);
 		dev_dbg(bq2419x->dev, "USB is connected\n");
 	} else if ((val & BQ2419x_VBUS_PG_STAT) == BQ2419x_VBUS_UNKNOWN) {
-		extcon_set_state_sync(&bq2419x->edev, EXTCON_USB, false);
+		extcon_set_state(&bq2419x->edev, EXTCON_USB, false);
 		dev_info(bq2419x->dev, "USB is disconnected\n");
 	}
 
@@ -2401,12 +2387,12 @@ static int bq2419x_resume(struct device *dev)
 		return IRQ_HANDLED;
 	}
 	if ((val & BQ2419x_VBUS_PG_STAT) == BQ2419x_PG_VBUS_USB) {
-		extcon_set_cable_state_(&bq2419x->edev,
+		extcon_set_state(&bq2419x->edev,
 						bq2419x_extcon_cable[0], true);
 		if (!bq2419x->cable_connected)
 			dev_info(bq2419x->dev, "USB is connected\n");
 	} else if ((val & BQ2419x_VBUS_PG_STAT) == BQ2419x_VBUS_UNKNOWN) {
-		extcon_set_cable_state_(&bq2419x->edev,
+		extcon_set_state(&bq2419x->edev,
 						bq2419x_extcon_cable[0], false);
 		if (bq2419x->cable_connected)
 			dev_info(bq2419x->dev, "USB is disconnected\n");

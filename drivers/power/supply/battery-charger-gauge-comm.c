@@ -472,9 +472,9 @@ int battery_charging_wakeup(struct battery_charger_dev *bc_dev, int after_sec)
 		dev_err(bc_dev->parent_dev, "RTC read time failed %d\n", ret);
 		return ret;
 	}
-	rtc_tm_to_time(&alm.time, &now);
+	rtc_tm_to_time64(&alm.time);
 
-	rtc_time_to_tm(now + alarm_time, &alm.time);
+	rtc_time64_to_tm(now + alarm_time, &alm.time);
 	ret = rtc_set_alarm(bc_dev->rtc, &alm);
 	if (ret < 0) {
 		dev_err(bc_dev->parent_dev, "RTC set alarm failed %d\n", ret);
@@ -561,7 +561,7 @@ struct battery_charger_dev *battery_charger_register(struct device *dev,
 	INIT_DELAYED_WORK(&bc_dev->restart_charging_wq,
 			battery_charger_restart_charging_wq);
 
-	wakeup_source_init(&bc_dev->charger_wake_lock, "charger-suspend-lock");
+    wakeup_source_add(&bc_dev->charger_wake_lock);
 
 	list_add(&bc_dev->list, &charger_list);
 	mutex_unlock(&charger_gauge_list_mutex);
@@ -576,7 +576,7 @@ void battery_charger_unregister(struct battery_charger_dev *bc_dev)
 	if (bc_dev->polling_time_sec)
 		cancel_delayed_work(&bc_dev->poll_temp_monitor_wq);
 	cancel_delayed_work(&bc_dev->restart_charging_wq);
-	wakeup_source_trash(&bc_dev->charger_wake_lock);
+	wakeup_source_destroy(&bc_dev->charger_wake_lock);
 	mutex_unlock(&charger_gauge_list_mutex);
 	kfree(bc_dev);
 }
