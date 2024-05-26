@@ -43,7 +43,7 @@ static u8 flowctrl_offset_cc4_ctrl[] = {
 
 static void __iomem *tegra_flowctrl_base;
 
-static void flowctrl_update(u8 offset, u32 value)
+void flowctrl_update(u8 offset, u32 value)
 {
 	if (WARN_ONCE(IS_ERR_OR_NULL(tegra_flowctrl_base),
 		      "Tegra flowctrl not initialised!\n"))

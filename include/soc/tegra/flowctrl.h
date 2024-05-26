@@ -39,7 +39,7 @@
 
 #ifndef __ASSEMBLY__
 #ifdef CONFIG_SOC_TEGRA_FLOWCTRL
-static void flowctrl_update(u8 offset, u32 value);
+void flowctrl_update(u8 offset, u32 value);
 u32 flowctrl_readl(u8 offset);
 void flowctrl_write_cpu_csr(unsigned int cpuid, u32 value);
 void flowctrl_write_cpu_halt(unsigned int cpuid, u32 value);
