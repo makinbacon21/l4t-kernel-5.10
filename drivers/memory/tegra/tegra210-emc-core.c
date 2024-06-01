@@ -1851,6 +1851,26 @@ static void tegra210_init_emc_data_smc(struct platform_device *pdev,
 	table->flags = IORESOURCE_MEM;
 }
 
+static int tegra210b01_emc_probe(struct platform_device *pdev)
+{
+	emc->clk = devm_clk_get(&pdev->dev, "emc");
+	if (IS_ERR(emc->clk))
+		return PTR_ERR(emc->clk);
+
+	dev_info(&pdev->dev, "T210B01 EMC pm ops are registered\n");
+	return 0;
+}
+
+static int tegra210x_emc_probe(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+
+	if (of_device_is_compatible(np, "nvidia,tegra210b01-emc"))
+		return tegra210b01_emc_probe(pdev);
+
+	return tegra210_emc_probe(pdev);
+}
+
 static int tegra210_emc_probe(struct platform_device *pdev)
 {
 	struct thermal_cooling_device *cd;
@@ -2123,6 +2143,7 @@ static const struct dev_pm_ops tegra210_emc_pm_ops = {
 
 static const struct of_device_id tegra210_emc_of_match[] = {
 	{ .compatible = "nvidia,tegra210-emc", },
+    { .compatible = "nvidia,tegra210b01-emc", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, tegra210_emc_of_match);
@@ -2133,7 +2154,7 @@ static struct platform_driver tegra210_emc_driver = {
 		.of_match_table = tegra210_emc_of_match,
 		.pm = &tegra210_emc_pm_ops,
 	},
-	.probe = tegra210_emc_probe,
+	.probe = tegra210x_emc_probe,
 	.remove = tegra210_emc_remove,
 };
 
