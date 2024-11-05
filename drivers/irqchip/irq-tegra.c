@@ -24,6 +24,7 @@
  */
 
 #include <linux/cpu.h>
+#include <linux/cpuhotplug.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -156,58 +157,6 @@ static irqreturn_t doorbell_handler(int irq, void *data)
 
 	return IRQ_HANDLED;
 }
-
-static void doorbell_set_irq_affinity(int cpu)
-{
-	int nr_cpus = num_present_cpus(), err, i;
-
-	for (i = cpu; i < ARRAY_SIZE(doorbells) - 1; i += nr_cpus) {
-		if (doorbells[i].irq < 0)
-			continue;
-		err = irq_set_affinity(doorbells[i].irq, cpumask_of(cpu));
-		WARN_ON(err);
-	}
-}
-
-static void doorbell_remove_irq_affinity(int cpu)
-{
-	int nr_cpus = num_present_cpus(), err, i, new_cpu;
-
-	for (i = cpu; i < ARRAY_SIZE(doorbells) - 1; i += nr_cpus) {
-		if (doorbells[i].irq < 0)
-			continue;
-		new_cpu = cpumask_any_but(cpu_online_mask, cpu);
-		err = irq_set_affinity(doorbells[i].irq, cpumask_of(new_cpu));
-		WARN_ON(err);
-	}
-}
-
-/*
- * When a CPU is being hot unplugged, the incoming
- * doorbell irqs must be moved to another CPU
- */
-static int doorbell_cpu_notify(struct notifier_block *nb, unsigned long action,
-				void *data)
-{
-	int cpu = (long)data;
-
-	switch (action) {
-	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
-		doorbell_remove_irq_affinity(cpu);
-                break;
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		doorbell_set_irq_affinity(cpu);
-		break;
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block doorbell_cpu_nb = {
-	.notifier_call = doorbell_cpu_notify
-};
 
 static inline void tegra_ictlr_write_mask(struct irq_data *d, unsigned long reg)
 {
@@ -516,17 +465,14 @@ static int __init tegra_ictlr_init(struct device_node *node,
 			break;
 
 		doorbells[idx].hwirq = irq_to_desc(irq)->irq_data.hwirq - 32;
-		err = request_irq(doorbells[idx].irq, doorbell_handler, 0,
-				  "doorbell", &doorbells[idx]);
+		err = request_irq(doorbells[idx].irq, doorbell_handler,
+				  IRQD_AFFINITY_MANAGED, "doorbell", &doorbells[idx]);
 		if (err < 0) {
 			pr_err("doorbell %d irq %d request failure\n",
 				idx, irq);
 			goto out_deregister;
 		}
 	}
-
-	for_each_present_cpu(i)
-		doorbell_set_irq_affinity(i);
 
 	for (i = 0; idx < ARRAY_SIZE(doorbells); i++, idx++) {
 		int hwirq;
@@ -539,7 +485,7 @@ static int __init tegra_ictlr_init(struct device_node *node,
 		doorbells[idx].irq = -1;
 	}
 
-	return register_cpu_notifier(&doorbell_cpu_nb);
+	return err;
 
 out_deregister:
 	for (i = 0; i < idx; i++)
