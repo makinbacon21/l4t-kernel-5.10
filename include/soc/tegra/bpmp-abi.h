@@ -321,6 +321,7 @@ struct mrq_response {
 #define MRQ_CPU_VHINT		28U
 #define MRQ_ABI_RATCHET		29U
 #define MRQ_EMC_DVFS_LATENCY	31U
+#define MRQ_EMC_DVFS_TABLE	32U
 #define MRQ_RINGBUF_CONSOLE	65U
 #define MRQ_PG			66U
 #define MRQ_CPU_NDIV_LIMITS	67U
@@ -342,6 +343,40 @@ struct mrq_response {
 #define MRQ_OC_STATUS		84U
 
 /** @} */
+
+/**
+ * @ingroup MRQ_Codes
+ * @def MRQ_EMC_DVFS_TABLE
+ * @brief query frequency dependent EMC DVFS table
+ *
+ * * Platforms: T210 rev b
+ * * Initiators: CCPLEX
+ * * Targets: BPMP
+ * * Request Payload: N/A
+ * * Response Payload: @ref mrq_emc_dvfs_table_response
+ * @addtogroup EMC
+ * @{
+ */
+/**
+ * @brief used by @ref mrq_emc_dvfs_table_response
+ */
+struct emc_dvfs_table {
+	/** @brief EMC frequency in kHz */
+	uint32_t freq;
+	/** @brief EMC voltage in millivolts */
+	uint32_t mv;
+} BPMP_ABI_PACKED;
+
+#define EMC_DVFS_TABLE_MAX_SIZE	14
+/**
+ * @brief response to #MRQ_EMC_DVFS_TABLE
+ */
+struct mrq_emc_dvfs_table_response {
+	/** @brief the number valid entries in #pairs */
+	uint32_t num_pairs;
+	/** @brief EMC <frequency, voltage> information */
+	struct emc_dvfs_table pairs[EMC_DVFS_TABLE_MAX_SIZE];
+} BPMP_ABI_PACKED;
 
 /**
  * @ingroup MRQ_Codes

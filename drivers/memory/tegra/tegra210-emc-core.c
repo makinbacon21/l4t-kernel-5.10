@@ -18,6 +18,8 @@
 #include <linux/thermal.h>
 #include <soc/tegra/fuse.h>
 #include <soc/tegra/mc.h>
+#include <soc/tegra/bpmp.h>
+#include <soc/tegra/bpmp-abi.h>
 
 #include "tegra210-emc.h"
 #include "tegra210-mc.h"
@@ -1851,6 +1853,32 @@ static void tegra210_init_emc_data_smc(struct platform_device *pdev,
 	table->flags = IORESOURCE_MEM;
 }
 
+static enum {
+	BPMP_EMC_UNKNOWN,
+	BPMP_EMC_VALID,
+	BPMP_EMC_INVALID,
+} bpmp_emc_table_state = BPMP_EMC_UNKNOWN;
+static struct mrq_emc_dvfs_table_response bpmp_emc_table;
+
+static void tegra210_bpmp_emc_table_get(void)
+{
+    int err;
+	struct tegra_bpmp *bpmp = to_tegra_bpmp(rstc);
+	struct tegra_bpmp_message msg = {
+		.mrq = MRQ_EMC_DVFS_TABLE,
+		.rx = {
+			.data = &bpmp_emc_table,
+			.size = sizeof(bpmp_emc_table),
+		},
+	}
+
+	err = tegra_bpmp_transfer(bpmp, &msg);
+	if (err || msg.rx.ret < 0)
+		bpmp_emc_table_state = BPMP_EMC_INVALID;
+	else
+		bpmp_emc_table_state = BPMP_EMC_VALID;
+}
+
 static int tegra210b01_emc_probe(struct platform_device *pdev)
 {
 	emc->clk = devm_clk_get(&pdev->dev, "emc");
@@ -1972,6 +2000,17 @@ static int tegra210_emc_probe(struct platform_device *pdev)
 		}
     }
 
+	if (bpmp_emc_table_state == BPMP_EMC_UNKNOWN)
+		tegra210_bpmp_emc_table_get();
+
+	if (bpmp_emc_table_state == BPMP_EMC_VALID) {
+		for (i = 0; i < bpmp_emc_table.num_pairs; ++i) {
+			if (bpmp_emc_table.pairs[i].mv > millivolts)
+				break;
+			ret = bpmp_emc_table.pairs[i].freq * 1000;
+		}
+		return ret;
+	}
 
 	/* default to the nominal table */
 	emc->timings = emc->nominal;
