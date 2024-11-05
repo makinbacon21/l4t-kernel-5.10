@@ -97,9 +97,7 @@ config ARCH_TEGRA_186_SOC
 	bool "NVIDIA Tegra186 SoC"
 	select PINCTRL_TEGRA186
 	select MAILBOX
-	select TEGRA_BPMP
 	select TEGRA_HSP_MBOX
-	select TEGRA_IVC
 	select SOC_TEGRA_PMC
 	help
 	  Enable support for the NVIDIA Tegar186 SoC. The Tegra186 features a
@@ -114,9 +112,7 @@ config ARCH_TEGRA_194_SOC
 	select PINCTRL_TEGRA194
 	select MAILBOX
 	select PINCTRL_TEGRA194
-	select TEGRA_BPMP
 	select TEGRA_HSP_MBOX
-	select TEGRA_IVC
 	select SOC_TEGRA_PMC
 	help
 	  Enable support for the NVIDIA Tegra194 SoC.
@@ -124,9 +120,7 @@ config ARCH_TEGRA_194_SOC
 config ARCH_TEGRA_234_SOC
 	bool "NVIDIA Tegra234 SoC"
 	select MAILBOX
-	select TEGRA_BPMP
 	select TEGRA_HSP_MBOX
-	select TEGRA_IVC
 	select SOC_TEGRA_PMC
 	help
 	  Enable support for the NVIDIA Tegra234 SoC.
