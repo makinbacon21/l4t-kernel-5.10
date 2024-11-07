@@ -580,7 +580,18 @@ static struct i2c_driver max77812_i2c_driver = {
 	.probe = max77812_probe,
 	.id_table = max77812_id,
 };
-module_i2c_driver(max77812_i2c_driver);
+
+static int __init max77812_regulator_init(void)
+{
+	return i2c_add_driver(&max77812_i2c_driver);
+}
+subsys_initcall(max77812_regulator_init);
+
+static void __exit max77812_regulator_cleanup(void)
+{
+	i2c_del_driver(&max77812_i2c_driver);
+}
+module_exit(max77812_regulator_cleanup);
 
 MODULE_DESCRIPTION("max77812 regulator driver");
 MODULE_AUTHOR("Venkat Reddy Talla <vreddytalla@nvidia.com>");
