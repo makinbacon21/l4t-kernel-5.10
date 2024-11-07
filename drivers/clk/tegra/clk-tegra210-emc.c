@@ -1,371 +1,193 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2015-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
-#include <linux/clk/tegra.h>
-#include <linux/device.h>
-#include <linux/module.h>
-#include <linux/io.h>
+#include <linux/export.h>
 #include <linux/slab.h>
+#include <linux/err.h>
+#include <soc/tegra/tegra_emc.h>
 
 #include "clk.h"
 
-#define CLK_SOURCE_EMC 0x19c
-#define  CLK_SOURCE_EMC_2X_CLK_SRC GENMASK(31, 29)
-#define  CLK_SOURCE_EMC_MC_EMC_SAME_FREQ BIT(16)
-#define  CLK_SOURCE_EMC_2X_CLK_DIVISOR GENMASK(7, 0)
-
-#define CLK_SRC_PLLM 0
-#define CLK_SRC_PLLC 1
-#define CLK_SRC_PLLP 2
-#define CLK_SRC_CLK_M 3
-#define CLK_SRC_PLLM_UD 4
-#define CLK_SRC_PLLMB_UD 5
-#define CLK_SRC_PLLMB 6
-#define CLK_SRC_PLLP_UD 7
-
-struct tegra210_clk_emc {
-	struct clk_hw hw;
-	void __iomem *regs;
-
-	struct tegra210_clk_emc_provider *provider;
-
-	struct clk *parents[8];
-};
-
-static inline struct tegra210_clk_emc *
-to_tegra210_clk_emc(struct clk_hw *hw)
+static u8 clk_emc_get_parent(struct clk_hw *hw)
 {
-	return container_of(hw, struct tegra210_clk_emc, hw);
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	const struct clk_ops *mux_ops = emc->periph->mux_ops;
+	struct clk_hw *mux_hw = &emc->periph->mux.hw;
+
+	__clk_hw_set_clk(mux_hw, hw);
+
+	return mux_ops->get_parent(mux_hw);
 }
 
-static const char *tegra210_clk_emc_parents[] = {
-	"pll_m", "pll_c", "pll_p", "clk_m", "pll_m_ud", "pll_mb_ud",
-	"pll_mb", "pll_p_ud",
-};
-
-static u8 tegra210_clk_emc_get_parent(struct clk_hw *hw)
+static unsigned long clk_emc_recalc_rate(struct clk_hw *hw,
+					    unsigned long parent_rate)
 {
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(hw);
-	u32 value;
-	u8 src;
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	const struct clk_ops *div_ops = emc->periph->div_ops;
+	struct clk_hw *div_hw = &emc->periph->divider.hw;
+	unsigned long new_rate = clk_get_rate(clk_get_parent(hw->clk));
 
-	value = readl_relaxed(emc->regs + CLK_SOURCE_EMC);
-	src = FIELD_GET(CLK_SOURCE_EMC_2X_CLK_SRC, value);
+	__clk_hw_set_clk(div_hw, hw);
 
-	return src;
+	return div_ops->recalc_rate(div_hw, new_rate);
 }
 
-static unsigned long tegra210_clk_emc_recalc_rate(struct clk_hw *hw,
-						  unsigned long parent_rate)
+static long clk_emc_round_rate(struct clk_hw *hw, unsigned long rate,
+				  unsigned long *prate)
 {
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(hw);
-	u32 value, div;
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	unsigned long current_rate = clk_get_rate(hw->clk);
+	unsigned long ret;
 
-	/*
-	 * CCF assumes that neither the parent nor its rate will change during
-	 * ->set_rate(), so the parent rate passed in here was cached from the
-	 * parent before the ->set_rate() call.
-	 *
-	 * This can lead to wrong results being reported for the EMC clock if
-	 * the parent and/or parent rate have changed as part of the EMC rate
-	 * change sequence. Fix this by overriding the parent clock with what
-	 * we know to be the correct value after the rate change.
-	 */
-	parent_rate = clk_hw_get_rate(clk_hw_get_parent(hw));
+	if (!emc->emc_ops)
+		return current_rate;
 
-	value = readl_relaxed(emc->regs + CLK_SOURCE_EMC);
+	ret = emc->emc_ops->emc_round_rate(rate);
+	if (!ret)
+		return current_rate;
 
-	div = FIELD_GET(CLK_SOURCE_EMC_2X_CLK_DIVISOR, value);
-	div += 2;
-
-	return DIV_ROUND_UP(parent_rate * 2, div);
+	return ret;
 }
 
-static long tegra210_clk_emc_round_rate(struct clk_hw *hw, unsigned long rate,
-					unsigned long *prate)
+static int clk_emc_set_rate(struct clk_hw *hw, unsigned long rate,
+			       unsigned long parent_rate)
 {
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(hw);
-	struct tegra210_clk_emc_provider *provider = emc->provider;
-	unsigned int i;
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	unsigned long new_parent_rate;
+	struct clk *old_parent, *new_parent;
+	int ret = -EINVAL;
 
-	if (!provider || !provider->configs || provider->num_configs == 0)
-		return clk_hw_get_rate(hw);
+	if (!emc->emc_ops)
+		goto out;
 
-	for (i = 0; i < provider->num_configs; i++) {
-		if (provider->configs[i].rate >= rate)
-			return provider->configs[i].rate;
+	old_parent = clk_get_parent(hw->clk);
+	new_parent = emc->emc_ops->emc_predict_parent(rate, &new_parent_rate);
+	if (IS_ERR(new_parent))
+		goto out;
+
+	if (!clk_is_match(new_parent, old_parent))
+		clk_prepare_enable(new_parent);
+
+	ret = emc->emc_ops->emc_set_rate(rate);
+	if (ret) {
+		if (new_parent != old_parent)
+			clk_disable_unprepare(new_parent);
+		goto out;
 	}
 
-	return provider->configs[i - 1].rate;
+	if (!clk_is_match(new_parent, old_parent)) {
+		clk_hw_reparent(hw, __clk_get_hw(new_parent));
+		clk_disable_unprepare(old_parent);
+	}
+
+out:
+	return ret;
 }
 
-static struct clk *tegra210_clk_emc_find_parent(struct tegra210_clk_emc *emc,
-						u8 index)
+static int clk_emc_is_enabled(struct clk_hw *hw)
 {
-	struct clk_hw *parent = clk_hw_get_parent_by_index(&emc->hw, index);
-	const char *name = clk_hw_get_name(parent);
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	const struct clk_ops *gate_ops = emc->periph->gate_ops;
+	struct clk_hw *gate_hw = &emc->periph->gate.hw;
 
-	/* XXX implement cache? */
+	__clk_hw_set_clk(gate_hw, hw);
 
-	return __clk_lookup(name);
+	return gate_ops->is_enabled(gate_hw);
 }
 
-static int tegra210_clk_emc_set_rate(struct clk_hw *hw, unsigned long rate,
-				     unsigned long parent_rate)
+static int clk_emc_enable(struct clk_hw *hw)
 {
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(hw);
-	struct tegra210_clk_emc_provider *provider = emc->provider;
-	struct tegra210_clk_emc_config *config;
-	struct device *dev = provider->dev;
-	struct clk_hw *old, *new, *parent;
-	u8 old_idx, new_idx, index;
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	const struct clk_ops *gate_ops = emc->periph->gate_ops;
+	struct clk_hw *gate_hw = &emc->periph->gate.hw;
+
+	__clk_hw_set_clk(gate_hw, hw);
+
+	return gate_ops->enable(gate_hw);
+}
+
+static void clk_emc_disable(struct clk_hw *hw)
+{
+	struct tegra_clk_emc *emc = to_clk_emc(hw);
+	const struct clk_ops *gate_ops = emc->periph->gate_ops;
+	struct clk_hw *gate_hw = &emc->periph->gate.hw;
+
+	gate_ops->disable(gate_hw);
+}
+
+static const struct clk_ops tegra_clk_emc_ops = {
+	.get_parent = clk_emc_get_parent,
+	.recalc_rate = clk_emc_recalc_rate,
+	.round_rate = clk_emc_round_rate,
+	.set_rate = clk_emc_set_rate,
+	.is_enabled = clk_emc_is_enabled,
+	.enable = clk_emc_enable,
+	.disable = clk_emc_disable,
+};
+
+struct clk *tegra_clk_register_emc_t210(const char *name,
+	const char **parent_names,
+	int num_parents, struct tegra_clk_periph *periph,
+	void __iomem *clk_base, u32 offset, unsigned long flags,
+	const struct emc_clk_ops *emc_ops)
+{
+	struct tegra_clk_emc *emc;
 	struct clk *clk;
-	unsigned int i;
-	int err;
-
-	if (!provider->configs || provider->num_configs == 0)
-		return -EINVAL;
-
-	for (i = 0; i < provider->num_configs; i++) {
-		if (provider->configs[i].rate >= rate) {
-			config = &provider->configs[i];
-			break;
-		}
-	}
-
-	if (i == provider->num_configs)
-		config = &provider->configs[i - 1];
-
-	old_idx = tegra210_clk_emc_get_parent(hw);
-	new_idx = FIELD_GET(CLK_SOURCE_EMC_2X_CLK_SRC, config->value);
-
-	old = clk_hw_get_parent_by_index(hw, old_idx);
-	new = clk_hw_get_parent_by_index(hw, new_idx);
-
-	/* if the rate has changed... */
-	if (config->parent_rate != clk_hw_get_rate(old)) {
-		/* ... but the clock source remains the same ... */
-		if (new_idx == old_idx) {
-			/* ... switch to the alternative clock source. */
-			switch (new_idx) {
-			case CLK_SRC_PLLM:
-				new_idx = CLK_SRC_PLLMB;
-				break;
-
-			case CLK_SRC_PLLM_UD:
-				new_idx = CLK_SRC_PLLMB_UD;
-				break;
-
-			case CLK_SRC_PLLMB_UD:
-				new_idx = CLK_SRC_PLLM_UD;
-				break;
-
-			case CLK_SRC_PLLMB:
-				new_idx = CLK_SRC_PLLM;
-				break;
-			}
-
-			/*
-			 * This should never happen because we can't deal with
-			 * it.
-			 */
-			if (WARN_ON(new_idx == old_idx))
-				return -EINVAL;
-
-			new = clk_hw_get_parent_by_index(hw, new_idx);
-		}
-
-		index = new_idx;
-		parent = new;
-	} else {
-		index = old_idx;
-		parent = old;
-	}
-
-	clk = tegra210_clk_emc_find_parent(emc, index);
-	if (IS_ERR(clk)) {
-		err = PTR_ERR(clk);
-		dev_err(dev, "failed to get parent clock for index %u: %d\n",
-			index, err);
-		return err;
-	}
-
-	/* set the new parent clock to the required rate */
-	if (clk_get_rate(clk) != config->parent_rate) {
-		err = clk_set_rate(clk, config->parent_rate);
-		if (err < 0) {
-			dev_err(dev, "failed to set rate %lu Hz for %pC: %d\n",
-				config->parent_rate, clk, err);
-			return err;
-		}
-	}
-
-	/* enable the new parent clock */
-	if (parent != old) {
-		err = clk_prepare_enable(clk);
-		if (err < 0) {
-			dev_err(dev, "failed to enable parent clock %pC: %d\n",
-				clk, err);
-			return err;
-		}
-	}
-
-	/* update the EMC source configuration to reflect the new parent */
-	config->value &= ~CLK_SOURCE_EMC_2X_CLK_SRC;
-	config->value |= FIELD_PREP(CLK_SOURCE_EMC_2X_CLK_SRC, index);
-
-	/*
-	 * Finally, switch the EMC programming with both old and new parent
-	 * clocks enabled.
-	 */
-	err = provider->set_rate(dev, config);
-	if (err < 0) {
-		dev_err(dev, "failed to set EMC rate to %lu Hz: %d\n", rate,
-			err);
-
-		/*
-		 * If we're unable to switch to the new EMC frequency, we no
-		 * longer need the new parent to be enabled.
-		 */
-		if (parent != old)
-			clk_disable_unprepare(clk);
-
-		return err;
-	}
-
-	/* reparent to new parent clock and disable the old parent clock */
-	if (parent != old) {
-		clk = tegra210_clk_emc_find_parent(emc, old_idx);
-		if (IS_ERR(clk)) {
-			err = PTR_ERR(clk);
-			dev_err(dev,
-				"failed to get parent clock for index %u: %d\n",
-				old_idx, err);
-			return err;
-		}
-
-		clk_hw_reparent(hw, parent);
-		clk_disable_unprepare(clk);
-	}
-
-	return err;
-}
-
-static const struct clk_ops tegra210_clk_emc_ops = {
-	.get_parent = tegra210_clk_emc_get_parent,
-	.recalc_rate = tegra210_clk_emc_recalc_rate,
-	.round_rate = tegra210_clk_emc_round_rate,
-	.set_rate = tegra210_clk_emc_set_rate,
-};
-
-struct clk *tegra210_clk_register_emc(struct device_node *np,
-				      void __iomem *regs)
-{
-	struct tegra210_clk_emc *emc;
 	struct clk_init_data init;
-	struct clk *clk;
+	const struct tegra_clk_periph_regs *bank;
 
 	emc = kzalloc(sizeof(*emc), GFP_KERNEL);
-	if (!emc)
+	if (!emc) {
+		pr_err("%s: could not allocate emc clk\n", __func__);
 		return ERR_PTR(-ENOMEM);
+	}
 
-	emc->regs = regs;
+	init.name = name;
+	init.ops = &tegra_clk_emc_ops;
+	init.flags = flags;
+	init.parent_names = parent_names;
+	init.num_parents = num_parents;
 
-	init.name = "emc";
-	init.ops = &tegra210_clk_emc_ops;
-	init.flags = CLK_IS_CRITICAL | CLK_GET_RATE_NOCACHE;
-	init.parent_names = tegra210_clk_emc_parents;
-	init.num_parents = ARRAY_SIZE(tegra210_clk_emc_parents);
+	bank = get_reg_bank(periph->gate.clk_num);
+	if (!bank)
+		return ERR_PTR(-EINVAL);
+
+	/* Data in .init is copied by clk_register(), so stack variable OK */
+	periph->hw.init = &init;
+	periph->magic = TEGRA_CLK_PERIPH_MAGIC;
+	periph->mux.reg = clk_base + offset;
+	periph->divider.reg = clk_base + offset;
+	periph->gate.clk_base = clk_base;
+	periph->gate.regs = bank;
+	periph->gate.enable_refcnt = periph_clk_enb_refcnt;
+
 	emc->hw.init = &init;
-
+	emc->periph = periph;
+	emc->emc_ops = emc_ops;
 	clk = clk_register(NULL, &emc->hw);
 	if (IS_ERR(clk)) {
 		kfree(emc);
 		return clk;
 	}
 
+	emc->periph->mux.hw.clk = clk;
+	emc->periph->divider.hw.clk = clk;
+	emc->periph->gate.hw.clk = clk;
+
 	return clk;
 }
-
-int tegra210_clk_emc_attach(struct clk *clk,
-			    struct tegra210_clk_emc_provider *provider)
-{
-	struct clk_hw *hw = __clk_get_hw(clk);
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(hw);
-	struct device *dev = provider->dev;
-	unsigned int i;
-	int err;
-
-	if (!try_module_get(provider->owner))
-		return -ENODEV;
-
-	for (i = 0; i < provider->num_configs; i++) {
-		struct tegra210_clk_emc_config *config = &provider->configs[i];
-		struct clk_hw *parent;
-		bool same_freq;
-		u8 div, src;
-
-		div = FIELD_GET(CLK_SOURCE_EMC_2X_CLK_DIVISOR, config->value);
-		src = FIELD_GET(CLK_SOURCE_EMC_2X_CLK_SRC, config->value);
-
-		/* do basic sanity checking on the EMC timings */
-		if (div & 0x1) {
-			dev_err(dev, "invalid odd divider %u for rate %lu Hz\n",
-				div, config->rate);
-			err = -EINVAL;
-			goto put;
-		}
-
-		same_freq = config->value & CLK_SOURCE_EMC_MC_EMC_SAME_FREQ;
-
-		if (same_freq != config->same_freq) {
-			dev_err(dev,
-				"ambiguous EMC to MC ratio for rate %lu Hz\n",
-				config->rate);
-			err = -EINVAL;
-			goto put;
-		}
-
-		parent = clk_hw_get_parent_by_index(hw, src);
-		config->parent = src;
-
-		if (src == CLK_SRC_PLLM || src == CLK_SRC_PLLM_UD) {
-			config->parent_rate = config->rate * (1 + div / 2);
-		} else {
-			unsigned long rate = config->rate * (1 + div / 2);
-
-			config->parent_rate = clk_hw_get_rate(parent);
-
-			if (config->parent_rate != rate) {
-				dev_err(dev,
-					"rate %lu Hz does not match input\n",
-					config->rate);
-				err = -EINVAL;
-				goto put;
-			}
-		}
-	}
-
-	emc->provider = provider;
-
-	return 0;
-
-put:
-	module_put(provider->owner);
-	return err;
-}
-EXPORT_SYMBOL_GPL(tegra210_clk_emc_attach);
-
-void tegra210_clk_emc_detach(struct clk *clk)
-{
-	struct tegra210_clk_emc *emc = to_tegra210_clk_emc(__clk_get_hw(clk));
-
-	module_put(emc->provider->owner);
-	emc->provider = NULL;
-}
-EXPORT_SYMBOL_GPL(tegra210_clk_emc_detach);

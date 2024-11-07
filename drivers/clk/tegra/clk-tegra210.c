@@ -18,6 +18,7 @@
 #include <dt-bindings/reset/tegra210-car.h>
 #include <linux/sizes.h>
 #include <soc/tegra/pmc.h>
+#include <soc/tegra/tegra_emc.h>
 
 #include "clk.h"
 #include "clk-id.h"
@@ -331,6 +332,12 @@ static unsigned long tegra210_input_freq[] = {
 	[5] = 38400000,
 	[8] = 12000000,
 };
+
+static const char *mux_pllmcp_clkm[] = {
+	"pll_m", "pll_c", "pll_p", "clk_m", "pll_m_ud", "pll_mb", "pll_mb_ud",
+	"pll_p_ud",
+};
+#define mux_pllmcp_clkm_idx NULL
 
 static const char * const aclk_parents[] = {
 	"pll_a1", "pll_c", "pll_p_out_adsp", "pll_a_out0", "pll_c2", "pll_c3",
@@ -3325,19 +3332,6 @@ static const struct clk_div_table mc_div_table_tegra210[] = {
 	{ .val = 0, .div = 0 },
 };
 
-static void tegra210_clk_register_mc(const char *name,
-				     const char *parent_name)
-{
-	struct clk *clk;
-
-	clk = clk_register_divider_table(NULL, name, parent_name,
-					 CLK_IS_CRITICAL,
-					 clk_base + CLK_SOURCE_EMC,
-					 15, 2, CLK_DIVIDER_READ_ONLY,
-					 mc_div_table_tegra210, &emc_lock);
-	clks[TEGRA210_CLK_MC] = clk;
-}
-
 static struct tegra_periph_init_data tegra210_periph[] = {
 	/*
 	 * On Tegra210, the sor0 clock doesn't have a mux it bitfield 31:29,
@@ -3378,6 +3372,25 @@ static const char * const mux_ape[] = {
 
 static struct tegra_clk_periph tegra_ape =
 	TEGRA_CLK_PERIPH(29, 7, 0, 0, 8, 1, 0, 198, TEGRA_PERIPH_ON_APB, NULL, NULL);
+
+static struct tegra_clk_periph tegra_emc_periph =
+	TEGRA_CLK_PERIPH(29, 7, 0, 0, 8, 1, 0, TEGRA210_CLK_EMC, 0, NULL, NULL);
+
+
+static __init void tegra210_emc_clk_init(void __iomem *clk_base)
+{
+	struct clk *clk;
+	const struct emc_clk_ops *emc_ops;
+	emc_ops = tegra210_emc_get_ops();
+	clk = tegra_clk_register_emc_t210("emc", mux_pllmcp_clkm,
+		ARRAY_SIZE(mux_pllmcp_clkm), &tegra_emc_periph, clk_base,
+		CLK_SOURCE_EMC, CLK_IGNORE_UNUSED | CLK_GET_RATE_NOCACHE,
+		emc_ops);
+	clks[TEGRA210_CLK_EMC] = clk;
+	clk = tegra_clk_register_mc("mc", "emc", clk_base + CLK_SOURCE_EMC,
+		&emc_lock);
+	clks[TEGRA210_CLK_MC] = clk;
+}
 
 static __init void tegra210_periph_clk_init(struct device_node *np,
 					    void __iomem *clk_base,
@@ -3442,6 +3455,8 @@ static __init void tegra210_periph_clk_init(struct device_node *np,
 					     periph_clk_enb_refcnt);
 	clks[TEGRA210_CLK_DSIB] = clk;
 
+    tegra210_emc_clk_init(clk_base);
+
 	/* csi_tpg */
 	clk = clk_register_gate(NULL, "csi_tpg", "pll_d",
 				CLK_SET_RATE_PARENT, clk_base + PLLD_BASE,
@@ -3484,15 +3499,6 @@ static __init void tegra210_periph_clk_init(struct device_node *np,
 	}
 
 	tegra_periph_clk_init(clk_base, pmc_base, tegra210_clks, pllp_params);
-
-	/* emc */
-	if (!t210b01) {
-		clk = tegra210_clk_register_emc(np, clk_base);
-		clks[TEGRA210_CLK_EMC] = clk;
-	}
-
-	/* mc */
-	tegra210_clk_register_mc("mc", "emc");
 
 	clk = clk_register_divider(NULL, "qspi_out", "qspi", 0,
 				   clk_base + 0x6c4, 8, 1, 0, NULL);
