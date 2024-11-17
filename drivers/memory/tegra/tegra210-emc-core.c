@@ -18,8 +18,13 @@
 #include <linux/thermal.h>
 #include <soc/tegra/fuse.h>
 #include <soc/tegra/mc.h>
+#if defined(CONFIG_NV_TEGRA_BPMP)
+#include <soc/tegra/bpmp_t210_abi.h>
+#include <soc/tegra/tegra_bpmp.h>
+#else
 #include <soc/tegra/bpmp.h>
 #include <soc/tegra/bpmp-abi.h>
+#endif
 
 #include "tegra210-emc.h"
 #include "tegra210-mc.h"
@@ -1862,6 +1867,15 @@ static struct mrq_emc_dvfs_table_response bpmp_emc_table;
 
 static void tegra210_bpmp_emc_table_get(void)
 {
+#if defined(CONFIG_NV_TEGRA_BPMP)
+
+	if (!tegra_bpmp_send_receive(MRQ_EMC_DVFS_TABLE, NULL, 0,
+				     &bpmp_emc_table,
+				     sizeof(bpmp_emc_table)))
+		bpmp_emc_table_state = BPMP_EMC_VALID;
+	else
+		bpmp_emc_table_state = BPMP_EMC_INVALID;
+#else
     int err;
 	struct tegra_bpmp *bpmp = to_tegra_bpmp(rstc);
 	struct tegra_bpmp_message msg = {
@@ -1877,10 +1891,15 @@ static void tegra210_bpmp_emc_table_get(void)
 		bpmp_emc_table_state = BPMP_EMC_INVALID;
 	else
 		bpmp_emc_table_state = BPMP_EMC_VALID;
+#endif
 }
 
 static int tegra210b01_emc_probe(struct platform_device *pdev)
 {
+    emc = devm_kzalloc(&pdev->dev, sizeof(*emc), GFP_KERNEL);
+	if (!emc)
+		return -ENOMEM;
+
 	emc->clk = devm_clk_get(&pdev->dev, "emc");
 	if (IS_ERR(emc->clk))
 		return PTR_ERR(emc->clk);
