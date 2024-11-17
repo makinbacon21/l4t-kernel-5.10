@@ -236,16 +236,21 @@ static inline unsigned int tegra_irq_idx_for_cpu(int cpu, bool tegra20)
 }
 
 static inline unsigned long tegra_rate_for_timer(struct timer_of *to,
-						 bool tegra20)
+                         bool tegra20)
 {
+	unsigned long rate;
 	/*
-	 * TIMER1-9 are fixed to 1MHz, TIMER10-13 are running off the
-	 * parent clock.
-	 */
-	if (tegra20)
+		* TIMER1-9 are fixed to 1MHz, TIMER10-13 are running off the
+		* parent clock.
+		*/
+	if (tegra20) {
+		pr_info("timer is 1mhz\n"); // you can add more prints from timer_of to
 		return TIMER_1MHz;
+	}
 
-	return timer_of_rate(to);
+	rate = timer_of_rate(to);
+	pr_info("timer is %ld\n", rate); // you can add more prints from timer_of to
+	return rate;
 }
 
 static int __init tegra_init_timer(struct device_node *np, bool tegra20,

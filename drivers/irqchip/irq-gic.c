@@ -1395,6 +1395,9 @@ static int gic_irq_domain_translate(struct irq_domain *d,
 		*type = fwspec->param[2] & IRQ_TYPE_SENSE_MASK;
 
 		/* Make it clear that broken DTs are... broken */
+		if (*type == IRQ_TYPE_NONE) {
+			pr_err("Wrong IRQ TYPE irq %ld\n", *hwirq);
+		}
 		WARN_ON(*type == IRQ_TYPE_NONE);
 
 		if ((gic->supports_routing) &&
@@ -1419,6 +1422,9 @@ static int gic_irq_domain_translate(struct irq_domain *d,
 		*hwirq = fwspec->param[0];
 		*type = fwspec->param[1];
 
+		if (*type == IRQ_TYPE_NONE) {
+			pr_err("Wrong IRQ TYPE irq %ld\n", *hwirq);
+		}
 		WARN_ON(*type == IRQ_TYPE_NONE);
 		return 0;
 	}
