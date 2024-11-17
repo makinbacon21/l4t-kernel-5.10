@@ -3379,15 +3379,21 @@ static struct tegra_clk_periph tegra_emc_periph =
 static __init void tegra210_emc_clk_init(void __iomem *clk_base)
 {
 	struct clk *clk;
-	const struct emc_clk_ops *emc_ops;
-	emc_ops = tegra210_emc_get_ops();
-	clk = tegra_clk_register_emc_t210("emc", mux_pllmcp_clkm,
-		ARRAY_SIZE(mux_pllmcp_clkm), &tegra_emc_periph, clk_base,
-		CLK_SOURCE_EMC, CLK_IGNORE_UNUSED | CLK_GET_RATE_NOCACHE,
-		emc_ops);
-	clks[TEGRA210_CLK_EMC] = clk;
-	clk = tegra_clk_register_mc("mc", "emc", clk_base + CLK_SOURCE_EMC,
-		&emc_lock);
+
+	if (!t210b01) {
+		const struct emc_clk_ops *emc_ops;
+
+		emc_ops = tegra210_emc_get_ops();
+		clk = tegra_clk_register_emc_t210("emc", mux_pllmcp_clkm,
+			ARRAY_SIZE(mux_pllmcp_clkm), &tegra_emc_periph,
+			clk_base, CLK_SOURCE_EMC,
+			CLK_IGNORE_UNUSED | CLK_GET_RATE_NOCACHE,
+			emc_ops);
+		clks[TEGRA210_CLK_EMC] = clk;
+	}
+
+	clk = tegra_clk_register_mc_t210("mc", "emc", clk_base + CLK_SOURCE_EMC,
+		    &emc_lock);
 	clks[TEGRA210_CLK_MC] = clk;
 }
 
